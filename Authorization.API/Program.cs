@@ -1,4 +1,5 @@
 using Authorization.API.Context;
+using Authorization.API.Data;
 using Authorization.API.HostedService;
 using Authorization.API.Models;
 using Authorization.API.Services;
@@ -28,9 +29,13 @@ if (string.IsNullOrWhiteSpace(jwtKey))
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddOpenApi();
+builder.Services.Configure<SeedOptions>(builder.Configuration.GetSection(SeedOptions.SectionName));
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(connectionString));
 
 builder.Services.AddIdentity<ApplicationUser, ApplicationRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
@@ -38,6 +43,7 @@ builder.Services.AddIdentity<ApplicationUser, ApplicationRole>()
 
 builder.Services.Configure<IdentityOptions>(options =>
 {
+    options.User.RequireUniqueEmail = true;
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     options.Lockout.MaxFailedAccessAttempts = 5;
     options.Lockout.AllowedForNewUsers = true;
@@ -81,6 +87,8 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddHostedService<ExpiredCodeCleanupService>();
 
 var app = builder.Build();
+
+await DatabaseInitializer.InitializeAsync(app.Services);
 
 app.MapDefaultEndpoints();
 
