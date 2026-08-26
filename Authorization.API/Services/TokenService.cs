@@ -1,166 +1,85 @@
-﻿using Authorization.API.Context;
+﻿using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Authorization.API.Context;
 using Authorization.API.Helpers;
 using Authorization.API.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace Authorization.API.Services;
 
-/// <summary>
-/// The token service interface.
-/// </summary>
 public interface ITokenService
 {
-    /// <summary>
-    /// Generate authorization code.
-    /// </summary>
-    /// <param name="clientId">The client id.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="codeChallenge">The code challenge.</param>
-    /// <param name="codeChallengeMethod">The code challenge method.</param>
-    /// <returns><![CDATA[Task<string>]]></returns>
-    Task<string> GenerateAuthorizationCode(string clientId, string userId, string? codeChallenge, string? codeChallengeMethod);
+    Task<string> GenerateAuthorizationCode(
+        string clientId,
+        string userId,
+        string subject,
+        string? redirectUri,
+        string? scopes,
+        string? codeChallenge,
+        string? codeChallengeMethod);
 
-    /// <summary>
-    /// Generate jwt token.
-    /// </summary>
-    /// <param name="user">The user.</param>
-    /// <returns>A string</returns>
+    string GenerateAccessToken(string subject, string clientId, IEnumerable<string>? scopes = null, ApplicationUser? user = null);
+
     string GenerateJwtToken(ApplicationUser user);
 
-    /// <summary>
-    /// Generate jwt token.
-    /// </summary>
-    /// <param name="client">The client.</param>
-    /// <returns>A string</returns>
     string GenerateJwtToken(Client client);
 
-    /// <summary>
-    /// Generate jwt token.
-    /// </summary>
-    /// <param name="clientId">The client id.</param>
-    /// <param name="userId">The user id.</param>
-    /// <returns>A string</returns>
     string GenerateJwtToken(string clientId, string? userId);
 
-    /// <summary>
-    /// Generate jwt token.
-    /// </summary>
-    /// <param name="claims">The claims.</param>
-    /// <param name="expiresAt">The expires at.</param>
-    /// <returns>A string</returns>
     string GenerateJwtToken(List<Claim> claims, DateTime? expiresAt = null);
 
-    /// <summary>
-    /// Generate refresh token.
-    /// </summary>
-    /// <returns>A string</returns>
     string GenerateRefreshToken();
 
-    /// <summary>
-    /// Store refresh token.
-    /// </summary>
-    /// <param name="refreshToken">The refresh token.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="clientId">The client id.</param>
-    /// <returns>A Task</returns>
+    int GetAccessTokenExpirySeconds();
+
     Task StoreRefreshToken(string refreshToken, string? userId = null, string? clientId = null);
 
-    /// <summary>
-    /// Validate refresh token.
-    /// </summary>
-    /// <param name="refreshToken">The refresh token.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="clientId">The client id.</param>
-    /// <returns><![CDATA[Task<bool>]]></returns>
     Task<bool> ValidateRefreshToken(string refreshToken, string? userId = null, string? clientId = null);
 
-    /// <summary>
-    /// Revokes refresh token.
-    /// </summary>
-    /// <param name="refreshToken">The refresh token.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="clientId">The client id.</param>
-    /// <returns>A Task</returns>
     Task RevokeRefreshToken(string refreshToken, string? userId = null, string? clientId = null);
 
-    /// <summary>
-    /// Revokes user refresh tokens.
-    /// </summary>
-    /// <param name="userId">The user id.</param>
-    /// <returns>A Task</returns>
     Task RevokeUserRefreshTokens(string userId);
 
-    /// <summary>
-    /// Revokes client refresh tokens.
-    /// </summary>
-    /// <param name="clientId">The client id.</param>
-    /// <returns>A Task</returns>
     Task RevokeClientRefreshTokens(string clientId);
 
-    /// <summary>
-    /// Validate the token.
-    /// </summary>
-    /// <param name="token">The token.</param>
-    /// <returns>A ClaimsPrincipal?</returns>
     ClaimsPrincipal? ValidateToken(string token);
 }
 
-/// <summary>
-/// The token service.
-/// </summary>
 public class TokenService : ITokenService
 {
-    /// <summary>
-    /// The config.
-    /// </summary>
     private readonly IConfiguration _config;
-    /// <summary>
-    /// The db context.
-    /// </summary>
     private readonly ApplicationDbContext _dbContext;
-    /// <summary>
-    /// The encryption service.
-    /// </summary>
-    private readonly IEncryptionService _encryptionService;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TokenService"/> class.
-    /// </summary>
-    /// <param name="config">The config.</param>
-    /// <param name="context">The context.</param>
-    public TokenService(IConfiguration config, ApplicationDbContext context, IEncryptionService encryptionService)
+    public TokenService(IConfiguration config, ApplicationDbContext context)
     {
         _config = config;
         _dbContext = context;
-        _encryptionService = encryptionService;
     }
 
-    /// <summary>
-    /// Generate authorization code.
-    /// </summary>
-    /// <param name="clientId">The client id.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="codeChallenge">The code challenge.</param>
-    /// <param name="codeChallengeMethod">The code challenge method.</param>
-    /// <returns><![CDATA[Task<string>]]></returns>
-    public async Task<string> GenerateAuthorizationCode(string clientId, string userId, string? codeChallenge, string? codeChallengeMethod)
+    public async Task<string> GenerateAuthorizationCode(
+        string clientId,
+        string userId,
+        string subject,
+        string? redirectUri,
+        string? scopes,
+        string? codeChallenge,
+        string? codeChallengeMethod)
     {
-        var code = TokenHelper.GenerateSecureCode(); // Generate a random secure code
-        var encryptedCode = _encryptionService.Encrypt(code);
+        var code = TokenHelper.GenerateSecureCode();
 
         var authCode = new AuthorizationCode
         {
-            Code = encryptedCode,
+            Code = TokenHelper.HashToken(code),
             ClientId = clientId,
             UserId = userId,
+            Subject = subject,
+            RedirectUri = redirectUri,
+            Scopes = scopes,
             ExpiresAt = DateTime.UtcNow.AddMinutes(5),
-            CodeChallenge = codeChallenge, // Store PKCE challenge
-            CodeChallengeMethod = codeChallengeMethod // Store PKCE method
+            CodeChallenge = codeChallenge,
+            CodeChallengeMethod = codeChallengeMethod
         };
 
         _dbContext.AuthorizationCodes.Add(authCode);
@@ -169,228 +88,174 @@ public class TokenService : ITokenService
         return code;
     }
 
-    public string GenerateAccessToken(string subject, string clientId, List<string>? scopes = null, ApplicationUser? user = null)
+    public string GenerateAccessToken(string subject, string clientId, IEnumerable<string>? scopes = null, ApplicationUser? user = null)
     {
         var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, subject),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-            new Claim("client_id", clientId)
+            new(JwtRegisteredClaimNames.Sub, subject),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new("client_id", clientId)
         };
 
         if (user != null)
         {
-            claims.Add(new(ClaimTypes.NameIdentifier, user.Id));
-            claims.Add(new(ClaimTypes.Name, user.UserName ?? ""));
-            claims.Add(new(ClaimTypes.Email, user.Email ?? ""));
+            claims.Add(new Claim(ClaimTypes.NameIdentifier, user.Id));
+            claims.Add(new Claim(ClaimTypes.Name, user.UserName ?? string.Empty));
+            if (!string.IsNullOrEmpty(user.Email))
+            {
+                claims.Add(new Claim(ClaimTypes.Email, user.Email));
+            }
         }
 
-        // Add scopes as claims if provided
         if (scopes != null)
         {
-            claims.Add(new Claim("scope", string.Join(" ", scopes)));
+            var scopeValue = string.Join(' ', scopes);
+            if (!string.IsNullOrWhiteSpace(scopeValue))
+            {
+                claims.Add(new Claim("scope", scopeValue));
+            }
         }
 
         return GenerateJwtToken(claims);
     }
 
-    public int GetAccessTokenExpiry()
+    public int GetAccessTokenExpirySeconds()
     {
         var expiry = _config["Jwt:AccessTokenExpiryMinutes"];
-
-        if (int.TryParse(expiry, out var result))
+        if (int.TryParse(expiry, out var minutes) && minutes > 0)
         {
-            return result * 60; // Convert minutes to seconds
+            return minutes * 60;
         }
 
-        return 2400; // Convert minutes to seconds
+        return 30 * 60;
     }
 
-
-    /// <summary>
-    /// Generate jwt token.
-    /// </summary>
-    /// <param name="user">The user.</param>
-    /// <returns>A string</returns>
     public string GenerateJwtToken(ApplicationUser user)
     {
         var claims = new List<Claim>
         {
-            new (ClaimTypes.NameIdentifier, user.Id),
-            new (ClaimTypes.Name, user.UserName ?? ""),
-            new (ClaimTypes.Email, user.Email ?? "")
+            new(ClaimTypes.NameIdentifier, user.Id),
+            new(ClaimTypes.Name, user.UserName ?? string.Empty),
+            new(JwtRegisteredClaimNames.Sub, user.Id)
         };
+
+        if (!string.IsNullOrEmpty(user.Email))
+        {
+            claims.Add(new Claim(ClaimTypes.Email, user.Email));
+        }
 
         return GenerateJwtToken(claims);
     }
 
-    /// <summary>
-    /// Generate jwt token.
-    /// </summary>
-    /// <param name="client">The client.</param>
-    /// <returns>A string</returns>
     public string GenerateJwtToken(Client client)
     {
         var claims = new List<Claim>
         {
-            new (ClaimTypes.NameIdentifier, client.ClientId),
-            new (ClaimTypes.Name, client.ClientId ?? ""),
-            new ("client_id", client.ClientId ?? "")
+            new(ClaimTypes.NameIdentifier, client.ClientId),
+            new(ClaimTypes.Name, client.ClientId),
+            new(JwtRegisteredClaimNames.Sub, client.ClientId),
+            new("client_id", client.ClientId)
         };
+
+        if (client.AllowedScopes.Count > 0)
+        {
+            claims.Add(new Claim("scope", string.Join(' ', client.AllowedScopes)));
+        }
 
         return GenerateJwtToken(claims);
     }
 
-    /// <summary>
-    /// Generates a JWT access token for the given user or client.
-    /// </summary>
     public string GenerateJwtToken(string clientId, string? userId)
     {
         var claims = new List<Claim>
         {
-            new (JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new ("client_id", clientId)
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("client_id", clientId)
         };
 
         if (!string.IsNullOrEmpty(userId))
         {
             claims.Add(new Claim(ClaimTypes.NameIdentifier, userId));
+            claims.Add(new Claim(JwtRegisteredClaimNames.Sub, userId));
         }
 
         return GenerateJwtToken(claims);
     }
 
-    /// <summary>
-    /// Generate jwt token.
-    /// </summary>
-    /// <param name="claims">The claims.</param>
-    /// <param name="expiresAt">The expires at.</param>
-    /// <returns>A string</returns>
     public string GenerateJwtToken(List<Claim> claims, DateTime? expiresAt = null)
     {
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:SecretKey"]));
+        var secret = _config["Jwt:SecretKey"]
+            ?? throw new InvalidOperationException("Jwt:SecretKey is missing.");
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var token = new JwtSecurityToken(
             issuer: _config["Jwt:Issuer"],
             audience: _config["Jwt:Audience"],
             claims: claims,
-            expires: expiresAt ?? DateTime.UtcNow.AddMinutes(60),
+            expires: expiresAt ?? DateTime.UtcNow.AddSeconds(GetAccessTokenExpirySeconds()),
             signingCredentials: credentials
         );
+
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    // Generate a new refresh token (this is the token you'll issue)
-    /// <summary>
-    /// Generate refresh token.
-    /// </summary>
-    /// <returns>A string</returns>
     public string GenerateRefreshToken()
     {
-        var randomNumber = new byte[32];
-        using var rng = RandomNumberGenerator.Create();
-
-        rng.GetBytes(randomNumber);
-        return Convert.ToBase64String(randomNumber);
+        return TokenHelper.GenerateSecureCode(64);
     }
 
-    // Store the refresh token in the database
-    /// <summary>
-    /// Store refresh token.
-    /// </summary>
-    /// <param name="refreshToken">The refresh token.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="clientId">The client id.</param>
-    /// <exception cref="ArgumentException"></exception>
-    /// <returns>A Task</returns>
     public async Task StoreRefreshToken(string refreshToken, string? userId = null, string? clientId = null)
     {
-        // Ensure that only one of userId or clientId is set
-        if (userId == null && clientId == null)
+        if (string.IsNullOrWhiteSpace(userId) && string.IsNullOrWhiteSpace(clientId))
         {
-            throw new ArgumentException("Either userId or clientId must be provided");
-        }
-
-        if (userId != null && clientId != null)
-        {
-            throw new ArgumentException("Only one of userId or clientId should be provided");
+            throw new ArgumentException("Either userId or clientId must be provided.");
         }
 
         var refreshTokenEntity = new RefreshToken
         {
-            Token = refreshToken,
-            Expiry = DateTime.UtcNow.AddDays(30), // Refresh token expiration (adjust as necessary)
+            Token = TokenHelper.HashToken(refreshToken),
+            Expiry = DateTime.UtcNow.AddDays(30),
             IsRevoked = false,
+            Created = DateTime.UtcNow,
+            UserId = userId,
+            ClientId = clientId
         };
 
-        // Store the refresh token for a user
-        if (userId != null)
-        {
-            refreshTokenEntity.UserId = userId;
-        }
-
-        // Store the refresh token for a client
-        if (clientId != null)
-        {
-            refreshTokenEntity.ClientId = clientId;
-        }
-
-        // Add to database
         await _dbContext.RefreshTokens.AddAsync(refreshTokenEntity);
         await _dbContext.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Revokes refresh token.
-    /// </summary>
-    /// <param name="refreshToken">The refresh token.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="clientId">The client id.</param>
-    /// <exception cref="ArgumentException"></exception>
-    /// <exception cref="InvalidOperationException"></exception>
-    /// <returns>A Task</returns>
     public async Task RevokeRefreshToken(string refreshToken, string? userId = null, string? clientId = null)
     {
-        // Ensure that only one of userId or clientId is provided
-        if (userId == null && clientId == null)
+        var hashed = TokenHelper.HashToken(refreshToken);
+        var query = _dbContext.RefreshTokens.Where(rt => rt.Token == hashed && !rt.IsRevoked);
+
+        if (!string.IsNullOrWhiteSpace(userId))
         {
-            throw new ArgumentException("Either userId or clientId must be provided");
+            query = query.Where(rt => rt.UserId == userId);
         }
 
-        if (userId != null && clientId != null)
+        if (!string.IsNullOrWhiteSpace(clientId))
         {
-            throw new ArgumentException("Only one of userId or clientId should be provided");
+            query = query.Where(rt => rt.ClientId == clientId);
         }
 
-        // Find the refresh token in the database
-        var refreshTokenQuery = _dbContext.RefreshTokens.Where(rt => rt.Token == refreshToken);
-            
-        var refreshTokenEntity = await (userId == null
-            ? refreshTokenQuery.FirstOrDefaultAsync(rt => rt.ClientId == clientId)
-            : refreshTokenQuery.FirstOrDefaultAsync(rt => rt.UserId == userId));
-        
+        var refreshTokenEntity = await query.FirstOrDefaultAsync();
         if (refreshTokenEntity == null)
         {
-            throw new InvalidOperationException("Refresh token not found or does not belong to the specified user or client");
+            throw new InvalidOperationException("Refresh token not found or does not belong to the specified user or client.");
         }
 
-        // Mark the token as revoked
         refreshTokenEntity.IsRevoked = true;
-
-        // Save changes to the database
         await _dbContext.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Revokes user refresh tokens.
-    /// </summary>
-    /// <param name="userId">The user id.</param>
-    /// <returns>A Task</returns>
     public async Task RevokeUserRefreshTokens(string userId)
     {
         var refreshTokens = await _dbContext.RefreshTokens
-            .Where(rt => rt.UserId == userId)
+            .Where(rt => rt.UserId == userId && !rt.IsRevoked)
             .ToListAsync();
 
         foreach (var refreshToken in refreshTokens)
@@ -401,15 +266,10 @@ public class TokenService : ITokenService
         await _dbContext.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Revokes client refresh tokens.
-    /// </summary>
-    /// <param name="clientId">The client id.</param>
-    /// <returns>A Task</returns>
     public async Task RevokeClientRefreshTokens(string clientId)
     {
         var refreshTokens = await _dbContext.RefreshTokens
-            .Where(rt => rt.ClientId == clientId)
+            .Where(rt => rt.ClientId == clientId && !rt.IsRevoked)
             .ToListAsync();
 
         foreach (var refreshToken in refreshTokens)
@@ -420,44 +280,38 @@ public class TokenService : ITokenService
         await _dbContext.SaveChangesAsync();
     }
 
-    // Validate if the refresh token is still valid
-    /// <summary>
-    /// Validate refresh token.
-    /// </summary>
-    /// <param name="refreshToken">The refresh token.</param>
-    /// <param name="userId">The user id.</param>
-    /// <param name="clientId">The client id.</param>
-    /// <returns><![CDATA[Task<bool>]]></returns>
     public async Task<bool> ValidateRefreshToken(string refreshToken, string? userId = null, string? clientId = null)
     {
+        var hashed = TokenHelper.HashToken(refreshToken);
         var refreshTokenEntity = await _dbContext.RefreshTokens
-            .FirstOrDefaultAsync(rt => rt.Token == refreshToken && !rt.IsRevoked && rt.Expiry > DateTime.UtcNow);
+            .FirstOrDefaultAsync(rt => rt.Token == hashed && !rt.IsRevoked && rt.Expiry > DateTime.UtcNow);
 
-        // Validate User-based refresh token
-        if (userId != null && refreshTokenEntity != null && refreshTokenEntity.UserId == userId)
+        if (refreshTokenEntity == null)
         {
-            return refreshTokenEntity.Expiry > DateTime.UtcNow;
+            return false;
         }
 
-        // Validate Client-based refresh token
-        if (clientId != null && refreshTokenEntity != null && refreshTokenEntity.ClientId == clientId)
+        if (!string.IsNullOrWhiteSpace(userId) && refreshTokenEntity.UserId != userId)
         {
-            return refreshTokenEntity.Expiry > DateTime.UtcNow;
+            return false;
         }
 
-        return false;
+        if (!string.IsNullOrWhiteSpace(clientId) && refreshTokenEntity.ClientId != clientId)
+        {
+            return false;
+        }
+
+        return true;
     }
 
-
-    /// <summary>
-    /// Validates a JWT token and returns the claims principal.
-    /// </summary>
     public ClaimsPrincipal? ValidateToken(string token)
     {
         try
         {
             var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.UTF8.GetBytes(_config["Jwt:SecretKey"]);
+            var secret = _config["Jwt:SecretKey"]
+                ?? throw new InvalidOperationException("Jwt:SecretKey is missing.");
+            var key = Encoding.UTF8.GetBytes(secret);
 
             var validationParameters = new TokenValidationParameters
             {
@@ -467,15 +321,15 @@ public class TokenService : ITokenService
                 ValidateIssuerSigningKey = true,
                 ValidIssuer = _config["Jwt:Issuer"],
                 ValidAudience = _config["Jwt:Audience"],
-                IssuerSigningKey = new SymmetricSecurityKey(key)
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ClockSkew = TimeSpan.Zero
             };
 
-            var principal = tokenHandler.ValidateToken(token, validationParameters, out _);
-            return principal;
+            return tokenHandler.ValidateToken(token, validationParameters, out _);
         }
         catch
         {
-            return null; // Token is invalid or expired
+            return null;
         }
     }
 }

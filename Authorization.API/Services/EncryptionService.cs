@@ -15,6 +15,10 @@ public class EncryptionService : IEncryptionService
     public EncryptionService(string base64Key)
     {
         _key = Convert.FromBase64String(base64Key);
+        if (_key.Length is not (16 or 24 or 32))
+        {
+            throw new ArgumentException("Encryption key must be 16, 24, or 32 bytes after base64 decoding.", nameof(base64Key));
+        }
     }
 
     public string Encrypt(string plainText)
@@ -26,17 +30,14 @@ public class EncryptionService : IEncryptionService
         using var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
         using var ms = new MemoryStream();
         using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+        using (var sw = new StreamWriter(cs))
         {
-            using (var sw = new StreamWriter(cs))
-            {
-                sw.Write(plainText);
-            }
+            sw.Write(plainText);
         }
 
         var iv = aes.IV;
         var encryptedContent = ms.ToArray();
 
-        // Combine IV and encrypted content for storage
         var result = new byte[iv.Length + encryptedContent.Length];
         Buffer.BlockCopy(iv, 0, result, 0, iv.Length);
         Buffer.BlockCopy(encryptedContent, 0, result, iv.Length, encryptedContent.Length);
@@ -51,8 +52,12 @@ public class EncryptionService : IEncryptionService
         using var aes = Aes.Create();
         aes.Key = _key;
 
-        // Extract IV from the beginning of the cipher
         var iv = new byte[aes.BlockSize / 8];
+        if (fullCipher.Length <= iv.Length)
+        {
+            throw new CryptographicException("Cipher text is too short.");
+        }
+
         var cipher = new byte[fullCipher.Length - iv.Length];
         Buffer.BlockCopy(fullCipher, 0, iv, 0, iv.Length);
         Buffer.BlockCopy(fullCipher, iv.Length, cipher, 0, cipher.Length);
@@ -66,4 +71,3 @@ public class EncryptionService : IEncryptionService
         return sr.ReadToEnd();
     }
 }
-
