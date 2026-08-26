@@ -75,6 +75,34 @@ Set secrets with environment variables or user secrets, not production config fi
 
 Production should set `Database__MigrateOnStartup` and `Seed__Enabled` to `false` unless you intentionally want boot-time migration.
 
+## Admin client APIs
+
+Register and rotate OAuth clients without writing SQL. These endpoints require a JWT for a user in the `Administrator` role (the seeded `admin@localhost` user).
+
+```bash
+# 1. Sign in as admin
+curl -s -X POST http://localhost:8080/account/login/token \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@localhost","password":"Admin123!"}'
+
+# 2. Create a client (the plaintext secret is returned once)
+curl -X POST http://localhost:8080/admin/clients \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"spa","redirectUri":"http://localhost:3000/callback","allowedScopes":["openid","api"]}'
+```
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/admin/clients` | List clients (secrets never returned) |
+| GET | `/admin/clients/{id}` | Get one client |
+| POST | `/admin/clients` | Create client; secret is hashed at rest |
+| PUT | `/admin/clients/{id}` | Update metadata and scopes |
+| POST | `/admin/clients/{id}/secret` | Rotate secret |
+| DELETE | `/admin/clients/{id}` | Delete client |
+
+Client secrets are stored with ASP.NET Identity's password hasher. Existing plaintext secrets are hashed automatically on the next startup seed.
+
 ## Example: authorization code + PKCE
 
 ```text

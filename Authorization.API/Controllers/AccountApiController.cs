@@ -51,7 +51,7 @@ public class AccountApiController : ControllerBase
             return Unauthorized("Invalid email or password.");
         }
 
-        var accessToken = _tokenService.GenerateJwtToken(user);
+        var accessToken = _tokenService.GenerateJwtToken(user, await _userManager.GetRolesAsync(user));
         var refreshToken = _tokenService.GenerateRefreshToken();
         await _tokenService.StoreRefreshToken(refreshToken, user.Id);
 
@@ -138,7 +138,7 @@ public class AccountApiController : ControllerBase
 
         var newAccessToken = user == null
             ? _tokenService.GenerateJwtToken(client!)
-            : _tokenService.GenerateJwtToken(user);
+            : _tokenService.GenerateJwtToken(user, await _userManager.GetRolesAsync(user));
         var newRefreshToken = _tokenService.GenerateRefreshToken();
 
         await _tokenService.StoreRefreshToken(newRefreshToken, user?.Id, client?.ClientId);

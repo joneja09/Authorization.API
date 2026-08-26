@@ -20,9 +20,9 @@ public interface ITokenService
         string? codeChallenge,
         string? codeChallengeMethod);
 
-    string GenerateAccessToken(string subject, string clientId, IEnumerable<string>? scopes = null, ApplicationUser? user = null);
+    string GenerateAccessToken(string subject, string clientId, IEnumerable<string>? scopes = null, ApplicationUser? user = null, IEnumerable<string>? roles = null);
 
-    string GenerateJwtToken(ApplicationUser user);
+    string GenerateJwtToken(ApplicationUser user, IEnumerable<string>? roles = null);
 
     string GenerateJwtToken(Client client);
 
@@ -88,7 +88,7 @@ public class TokenService : ITokenService
         return code;
     }
 
-    public string GenerateAccessToken(string subject, string clientId, IEnumerable<string>? scopes = null, ApplicationUser? user = null)
+    public string GenerateAccessToken(string subject, string clientId, IEnumerable<string>? scopes = null, ApplicationUser? user = null, IEnumerable<string>? roles = null)
     {
         var claims = new List<Claim>
         {
@@ -107,6 +107,8 @@ public class TokenService : ITokenService
                 claims.Add(new Claim(ClaimTypes.Email, user.Email));
             }
         }
+
+        AddRoleClaims(claims, roles);
 
         if (scopes != null)
         {
@@ -131,7 +133,7 @@ public class TokenService : ITokenService
         return 30 * 60;
     }
 
-    public string GenerateJwtToken(ApplicationUser user)
+    public string GenerateJwtToken(ApplicationUser user, IEnumerable<string>? roles = null)
     {
         var claims = new List<Claim>
         {
@@ -144,6 +146,8 @@ public class TokenService : ITokenService
         {
             claims.Add(new Claim(ClaimTypes.Email, user.Email));
         }
+
+        AddRoleClaims(claims, roles);
 
         return GenerateJwtToken(claims);
     }
@@ -330,6 +334,22 @@ public class TokenService : ITokenService
         catch
         {
             return null;
+        }
+    }
+
+    private static void AddRoleClaims(List<Claim> claims, IEnumerable<string>? roles)
+    {
+        if (roles == null)
+        {
+            return;
+        }
+
+        foreach (var role in roles)
+        {
+            if (!string.IsNullOrWhiteSpace(role))
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+            }
         }
     }
 }

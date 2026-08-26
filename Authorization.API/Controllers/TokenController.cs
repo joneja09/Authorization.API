@@ -2,6 +2,7 @@ using Authorization.API.Context;
 using Authorization.API.Helpers;
 using Authorization.API.Models;
 using Authorization.API.Services;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,11 +14,19 @@ public class TokenController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
     private readonly ITokenService _tokenService;
+    private readonly IClientSecretHasher _secretHasher;
+    private readonly UserManager<ApplicationUser> _userManager;
 
-    public TokenController(ApplicationDbContext context, ITokenService tokenService)
+    public TokenController(
+        ApplicationDbContext context,
+        ITokenService tokenService,
+        IClientSecretHasher secretHasher,
+        UserManager<ApplicationUser> userManager)
     {
         _context = context;
         _tokenService = tokenService;
+        _secretHasher = secretHasher;
+        _userManager = userManager;
     }
 
     [HttpPost]
@@ -72,13 +81,18 @@ public class TokenController : ControllerBase
         await _context.SaveChangesAsync();
 
         ApplicationUser? user = null;
+        IList<string>? roles = null;
         if (!string.IsNullOrEmpty(authCode.UserId))
         {
             user = await _context.Users.FindAsync(authCode.UserId);
+            if (user != null)
+            {
+                roles = await _userManager.GetRolesAsync(user);
+            }
         }
 
         var scopes = SplitScopes(authCode.Scopes);
-        var accessToken = _tokenService.GenerateAccessToken(authCode.Subject, authCode.ClientId, scopes, user);
+        var accessToken = _tokenService.GenerateAccessToken(authCode.Subject, authCode.ClientId, scopes, user, roles);
         string? refreshToken = null;
 
         if (client.AllowRefreshToken)
@@ -120,7 +134,8 @@ public class TokenController : ControllerBase
 
         var scopes = request.Scope is null ? null : SplitScopes(request.Scope);
         var subject = storedToken.User?.Id ?? storedToken.UserId ?? storedToken.ClientId ?? request.ClientId;
-        var accessToken = _tokenService.GenerateAccessToken(subject, storedToken.ClientId ?? request.ClientId, scopes, storedToken.User);
+        IList<string>? roles = storedToken.User == null ? null : await _userManager.GetRolesAsync(storedToken.User);
+        var accessToken = _tokenService.GenerateAccessToken(subject, storedToken.ClientId ?? request.ClientId, scopes, storedToken.User, roles);
         var newRefreshToken = _tokenService.GenerateRefreshToken();
 
         await _tokenService.StoreRefreshToken(newRefreshToken, storedToken.UserId, request.ClientId);
@@ -164,7 +179,7 @@ public class TokenController : ControllerBase
         }
 
         var client = await _context.Clients.SingleOrDefaultAsync(c => c.ClientId == request.ClientId);
-        if (client == null || !TokenHelper.SecretsEqual(client.ClientSecret, request.ClientSecret))
+        if (client == null || !_secretHasher.Verify(client.ClientSecret, request.ClientSecret))
         {
             return null;
         }
