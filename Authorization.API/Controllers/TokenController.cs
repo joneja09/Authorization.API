@@ -69,7 +69,7 @@ public class TokenController : ControllerBase
             return BadRequest(new { error = "invalid_grant", error_description = "redirect_uri mismatch." });
         }
 
-        if (client.RequirePkce || !string.IsNullOrEmpty(authCode.CodeChallenge))
+        if (client.RequirePkce || !client.RequireClientSecret || !string.IsNullOrEmpty(authCode.CodeChallenge))
         {
             if (!PkceHelper.Validate(request.CodeVerifier, authCode.CodeChallenge, authCode.CodeChallengeMethod))
             {
@@ -120,28 +120,21 @@ public class TokenController : ControllerBase
             return BadRequest(new { error = "invalid_request", error_description = "refresh_token is required." });
         }
 
-        var hashedToken = TokenHelper.HashToken(request.RefreshToken);
-        var storedToken = await _context.RefreshTokens
-            .Include(t => t.User)
-            .SingleOrDefaultAsync(t => t.Token == hashedToken && t.ClientId == request.ClientId && !t.IsRevoked);
-
-        if (storedToken == null || storedToken.Expiry <= DateTime.UtcNow)
+        var rotation = await _tokenService.RotateRefreshToken(request.RefreshToken, clientId: request.ClientId);
+        if (rotation.IsInvalid)
         {
-            return BadRequest(new { error = "invalid_grant", error_description = "Invalid or expired refresh token." });
+            var description = rotation.ReuseDetected
+                ? "Refresh token reuse detected."
+                : "Invalid or expired refresh token.";
+            return BadRequest(new { error = "invalid_grant", error_description = description });
         }
 
-        storedToken.IsRevoked = true;
-
         var scopes = request.Scope is null ? null : SplitScopes(request.Scope);
-        var subject = storedToken.User?.Id ?? storedToken.UserId ?? storedToken.ClientId ?? request.ClientId;
-        IList<string>? roles = storedToken.User == null ? null : await _userManager.GetRolesAsync(storedToken.User);
-        var accessToken = _tokenService.GenerateAccessToken(subject, storedToken.ClientId ?? request.ClientId, scopes, storedToken.User, roles);
-        var newRefreshToken = _tokenService.GenerateRefreshToken();
+        var subject = rotation.User?.Id ?? rotation.UserId ?? rotation.ClientId;
+        IList<string>? roles = rotation.User == null ? null : await _userManager.GetRolesAsync(rotation.User);
+        var accessToken = _tokenService.GenerateAccessToken(subject, rotation.ClientId, scopes, rotation.User, roles);
 
-        await _tokenService.StoreRefreshToken(newRefreshToken, storedToken.UserId, request.ClientId);
-        await _context.SaveChangesAsync();
-
-        return Ok(CreateTokenResponse(accessToken, newRefreshToken));
+        return Ok(CreateTokenResponse(accessToken, rotation.NewRefreshToken));
     }
 
     private async Task<IActionResult> HandleClientCredentialsGrant(TokenRequest request)
@@ -150,6 +143,11 @@ public class TokenController : ControllerBase
         if (client is null)
         {
             return Unauthorized(new { error = "invalid_client" });
+        }
+
+        if (!client.RequireClientSecret)
+        {
+            return Unauthorized(new { error = "invalid_client", error_description = "Public clients cannot use client_credentials." });
         }
 
         IEnumerable<string>? scopes = null;
@@ -179,9 +177,18 @@ public class TokenController : ControllerBase
         }
 
         var client = await _context.Clients.SingleOrDefaultAsync(c => c.ClientId == request.ClientId);
-        if (client == null || !_secretHasher.Verify(client.ClientSecret, request.ClientSecret))
+        if (client == null)
         {
             return null;
+        }
+
+        if (client.RequireClientSecret)
+        {
+            if (string.IsNullOrEmpty(client.ClientSecret)
+                || !_secretHasher.Verify(client.ClientSecret, request.ClientSecret))
+            {
+                return null;
+            }
         }
 
         return client;

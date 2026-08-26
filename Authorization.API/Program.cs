@@ -62,6 +62,7 @@ builder.Services.AddSingleton<IEncryptionService>(_ => new EncryptionService(enc
 builder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IClientService, ClientService>();
+builder.Services.AddScoped<IConsentService, ConsentService>();
 
 var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 builder.Services.AddAuthentication(options =>

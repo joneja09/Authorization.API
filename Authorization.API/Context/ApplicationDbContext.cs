@@ -22,6 +22,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
 
     public DbSet<ApiResource> ApiResources { get; set; }
 
+    public DbSet<UserConsent> UserConsents { get; set; }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -33,8 +35,12 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
             .ToTable("Roles");
 
         builder.Entity<Client>()
-            .HasIndex(c => c.ClientId)
-            .IsUnique();
+            .Property(c => c.RequireClientSecret)
+            .HasDefaultValue(true);
+
+        builder.Entity<Client>()
+            .Property(c => c.RequireConsent)
+            .HasDefaultValue(true);
 
         builder.Entity<AuthorizationCode>()
             .HasIndex(ac => ac.Code)
@@ -59,6 +65,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
             .HasPrincipalKey(c => c.ClientId)
             .HasForeignKey(rt => rt.ClientId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<RefreshToken>()
+            .HasIndex(r => r.FamilyId);
+
+        builder.Entity<UserConsent>()
+            .HasIndex(c => new { c.UserId, c.ClientId })
+            .IsUnique();
 
         builder.Entity<ApiScope>()
             .HasIndex(s => s.Name)

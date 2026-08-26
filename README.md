@@ -37,6 +37,7 @@ The API applies EF Core migrations and seeds demo data on startup.
 | Admin user | `admin@localhost` / `Admin123!` |
 | Demo user | `demo@example.com` / `Password1!` |
 | Confidential client | `demo-client` / `demo-secret` |
+| Public SPA client | `demo-spa` (no secret; PKCE required) |
 | Redirect URI | `http://localhost:3000/callback` |
 
 Change these before any shared or production use.
@@ -102,6 +103,10 @@ curl -X POST http://localhost:8080/admin/clients \
 | DELETE | `/admin/clients/{id}` | Delete client |
 
 Client secrets are stored with ASP.NET Identity's password hasher. Existing plaintext secrets are hashed automatically on the next startup seed.
+
+Public clients (`requireClientSecret: false`) skip the secret, require PKCE, and cannot use the client credentials grant. After login, users see a consent screen the first time a client requests scopes.
+
+Refresh tokens rotate on every use. Presenting a previously rotated token revokes the entire token family.
 
 ## Example: authorization code + PKCE
 

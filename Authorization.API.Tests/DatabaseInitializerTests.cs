@@ -43,9 +43,10 @@ public class DatabaseInitializerTests
         Assert.NotNull(demo);
         Assert.True(await userManager.IsInRoleAsync(admin!, "Administrator"));
         var hasher = scope.ServiceProvider.GetRequiredService<IClientSecretHasher>();
-        Assert.True(hasher.Verify(client.ClientSecret, options.DemoClientSecret));
+        Assert.True(hasher.Verify(client.ClientSecret!, options.DemoClientSecret));
         Assert.NotEqual(options.DemoClientSecret, client.ClientSecret);
         Assert.Contains("api", client.AllowedScopes);
         Assert.True(await db.ApiScopes.AnyAsync(s => s.Name == "openid"));
+        Assert.True(await db.Clients.AnyAsync(c => c.ClientId == "demo-spa" && !c.RequireClientSecret));
     }
 }
