@@ -9,59 +9,30 @@ using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using System.Text;
 
-//var builder = WebApplication.CreateBuilder(args);
-
-//builder.AddServiceDefaults();
-
-//builder.Services.AddDbContext<ApplicationDbContext>(options =>
-//    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-//builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
-//    .AddEntityFrameworkStores<ApplicationDbContext>()
-//    .AddDefaultTokenProviders();
-
-//builder.Services.AddControllers();
-//// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-//builder.Services.AddOpenApi();
-
-//var app = builder.Build();
-
-//app.MapDefaultEndpoints();
-
-//// Configure the HTTP request pipeline.
-//if (app.Environment.IsDevelopment())
-//{
-//    app.MapOpenApi();
-//}
-
-//app.UseHttpsRedirection();
-
-//app.UseAuthorization();
-
-//app.MapControllers();
-
-//app.Run();
-
-
 var builder = WebApplication.CreateBuilder(args);
 
-// Load encryption key from environment variables or configuration
+builder.AddServiceDefaults();
+
 var encryptionKey = builder.Configuration["EncryptionKey"];
-if (string.IsNullOrEmpty(encryptionKey))
+if (string.IsNullOrWhiteSpace(encryptionKey))
 {
-    throw new Exception("Encryption key is missing in the configuration.");
+    throw new InvalidOperationException("EncryptionKey is missing. Set it in user secrets or environment variables.");
 }
 
-// Add services to the container
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
+var jwtSettings = builder.Configuration.GetSection("Jwt");
+var jwtKey = jwtSettings["SecretKey"];
+if (string.IsNullOrWhiteSpace(jwtKey))
+{
+    throw new InvalidOperationException("Jwt:SecretKey is missing. Set it in user secrets or environment variables.");
+}
+
+builder.Services.AddControllersWithViews();
 builder.Services.AddOpenApi();
 
-// Configure database (replace with your actual connection string)
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+builder.Services.AddIdentity<ApplicationUser, ApplicationRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 
@@ -72,40 +43,31 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.Lockout.AllowedForNewUsers = true;
 });
 
-
-// Register Encryption Service
-builder.Services.AddSingleton(new EncryptionService(encryptionKey));
-builder.Services.AddScoped<TokenService>();
-
-// get Jwt settings from configuration
-var jwtSettings = builder.Configuration.GetSection("Jwt");
-
-// Configure JWT authentication
-var jwtKey = jwtSettings["Secret"];
-if (string.IsNullOrEmpty(jwtKey))
+builder.Services.ConfigureApplicationCookie(options =>
 {
-    throw new Exception("JWT secret key is missing in the configuration.");
-}
+    options.LoginPath = "/account/login";
+    options.LogoutPath = "/account/logout";
+    options.ExpireTimeSpan = TimeSpan.FromHours(1);
+    options.SlidingExpiration = true;
+});
 
-var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+builder.Services.AddSingleton<IEncryptionService>(_ => new EncryptionService(encryptionKey));
+builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IClientService, ClientService>();
+
+var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 })
-.AddCookie(options =>
-{
-    options.LoginPath = "/account/login"; // Redirect to login page
-    options.LogoutPath = "/account/logout";
-    options.ExpireTimeSpan = TimeSpan.FromHours(1);
-})
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false;
+    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
-        IssuerSigningKey = key,
+        IssuerSigningKey = signingKey,
         ValidateIssuer = true,
         ValidateAudience = true,
         ValidateLifetime = true,
@@ -116,14 +78,15 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Register background service to clean expired authorization codes
 builder.Services.AddHostedService<ExpiredCodeCleanupService>();
 
 var app = builder.Build();
 
-// Configure middleware pipeline
+app.MapDefaultEndpoints();
+
 if (app.Environment.IsDevelopment())
 {
+    app.MapOpenApi();
     app.MapScalarApiReference();
 }
 

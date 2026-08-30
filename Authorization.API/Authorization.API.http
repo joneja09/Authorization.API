@@ -1,6 +1,36 @@
 @Authorization.API_HostAddress = http://localhost:5215
 
-GET {{Authorization.API_HostAddress}}/weatherforecast/
-Accept: application/json
+### Register a user
+POST {{Authorization.API_HostAddress}}/account/register
+Content-Type: application/json
 
-###
+{
+  "username": "demo",
+  "email": "demo@example.com",
+  "password": "Password1!"
+}
+
+### Password login (returns access and refresh tokens)
+POST {{Authorization.API_HostAddress}}/account/login/token
+Content-Type: application/json
+
+{
+  "email": "demo@example.com",
+  "password": "Password1!"
+}
+
+### Current user
+GET {{Authorization.API_HostAddress}}/account/me
+Authorization: Bearer {{access_token}}
+
+### Client credentials
+POST {{Authorization.API_HostAddress}}/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&client_id=demo-client&client_secret=demo-secret&scope=api
+
+### Authorization-code token exchange
+POST {{Authorization.API_HostAddress}}/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&client_id=demo-client&client_secret=demo-secret&code={{code}}&redirect_uri=https://localhost/callback&code_verifier={{code_verifier}}

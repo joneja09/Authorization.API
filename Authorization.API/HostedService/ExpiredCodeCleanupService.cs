@@ -1,41 +1,62 @@
 ﻿using Authorization.API.Context;
+using Microsoft.EntityFrameworkCore;
 
 namespace Authorization.API.HostedService;
-public class ExpiredCodeCleanupService : IHostedService
+
+public class ExpiredCodeCleanupService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private Timer _timer;
+    private readonly ILogger<ExpiredCodeCleanupService> _logger;
 
-    public ExpiredCodeCleanupService(IServiceScopeFactory scopeFactory)
+    public ExpiredCodeCleanupService(IServiceScopeFactory scopeFactory, ILogger<ExpiredCodeCleanupService> logger)
     {
         _scopeFactory = scopeFactory;
+        _logger = logger;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _timer = new Timer(CleanupExpiredCodes, null, TimeSpan.Zero, TimeSpan.FromMinutes(30));
-        return Task.CompletedTask;
-    }
-
-    private async void CleanupExpiredCodes(object state)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        var expiredCodes = context.AuthorizationCodes
-            .Where(c => c.ExpiresAt <= DateTime.UtcNow);
-
-        if (expiredCodes.Any())
+        try
         {
-            context.AuthorizationCodes.RemoveRange(expiredCodes);
-            await context.SaveChangesAsync();
+            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(30));
+
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                try
+                {
+                    await CleanupAsync(stoppingToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Failed to clean expired authorization data.");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Host is shutting down.
         }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    private async Task CleanupAsync(CancellationToken cancellationToken)
     {
-        _timer?.Change(Timeout.Infinite, 0);
-        return Task.CompletedTask;
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var expiredCodes = await context.AuthorizationCodes
+            .Where(c => c.ExpiresAt <= DateTime.UtcNow || c.IsUsed)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var expiredTokens = await context.RefreshTokens
+            .Where(t => t.Expiry <= DateTime.UtcNow)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        if (expiredCodes > 0 || expiredTokens > 0)
+        {
+            _logger.LogInformation(
+                "Removed {ExpiredCodes} authorization codes and {ExpiredTokens} refresh tokens.",
+                expiredCodes,
+                expiredTokens);
+        }
     }
 }
-

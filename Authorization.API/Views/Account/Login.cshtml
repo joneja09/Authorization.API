@@ -1,0 +1,98 @@
+@model Authorization.API.Models.LoginModel
+@{
+    Layout = null;
+    ViewData["Title"] = "Sign in";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f4f6f8;
+            --card: #ffffff;
+            --text: #1f2933;
+            --muted: #52606d;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+            --danger: #b91c1c;
+            --border: #d9e2ec;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: grid;
+            place-items: center;
+            padding: 1.5rem;
+        }
+        .card {
+            width: min(100%, 28rem);
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+        h1 { margin: 0 0 0.35rem; font-size: 1.5rem; }
+        p { margin: 0 0 1.5rem; color: var(--muted); }
+        label { display: block; font-weight: 600; margin: 0 0 0.35rem; }
+        input[type="email"], input[type="password"] {
+            width: 100%;
+            padding: 0.75rem 0.85rem;
+            border: 1px solid var(--border);
+            border-radius: 0.6rem;
+            margin-bottom: 1rem;
+            font: inherit;
+        }
+        .remember {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1.25rem;
+            color: var(--muted);
+        }
+        button {
+            width: 100%;
+            border: 0;
+            border-radius: 0.6rem;
+            padding: 0.85rem 1rem;
+            background: var(--accent);
+            color: white;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { background: var(--accent-hover); }
+        .validation { color: var(--danger); margin-bottom: 1rem; }
+        .validation ul { margin: 0; padding-left: 1.2rem; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Sign in</h1>
+        <p>Use your account to continue the authorization request.</p>
+        <form asp-action="Login" asp-controller="Account" method="post">
+            <div asp-validation-summary="ModelOnly" class="validation"></div>
+            <input type="hidden" asp-for="ReturnUrl" />
+            <label asp-for="Email">Email</label>
+            <input asp-for="Email" autocomplete="username" />
+            <span asp-validation-for="Email" class="validation"></span>
+            <label asp-for="Password">Password</label>
+            <input asp-for="Password" autocomplete="current-password" />
+            <span asp-validation-for="Password" class="validation"></span>
+            <label class="remember">
+                <input asp-for="RememberMe" />
+                Remember me
+            </label>
+            <button type="submit">Sign in</button>
+        </form>
+    </main>
+</body>
+</html>
