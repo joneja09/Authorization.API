@@ -123,6 +123,24 @@ public static class DatabaseInitializer
                 ClientSecret = secretHasher.Hash(options.DemoClientSecret),
                 RedirectUri = options.DemoRedirectUri,
                 RequirePkce = true,
+                RequireClientSecret = true,
+                RequireConsent = true,
+                AllowRefreshToken = true,
+                AllowedScopes = ["openid", "profile", "email", "api"]
+            });
+        }
+
+        if (!await db.Clients.AnyAsync(c => c.ClientId == "demo-spa", cancellationToken))
+        {
+            db.Clients.Add(new Client
+            {
+                ClientId = "demo-spa",
+                Description = "Local demo public SPA client",
+                ClientSecret = null,
+                RedirectUri = options.DemoRedirectUri,
+                RequirePkce = true,
+                RequireClientSecret = false,
+                RequireConsent = true,
                 AllowRefreshToken = true,
                 AllowedScopes = ["openid", "profile", "email", "api"]
             });

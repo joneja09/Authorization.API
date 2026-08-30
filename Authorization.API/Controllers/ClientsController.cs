@@ -50,18 +50,22 @@ public class ClientsController : ControllerBase
             return Conflict(new { error = "client_id already exists." });
         }
 
-        var plaintextSecret = string.IsNullOrWhiteSpace(request.ClientSecret)
-            ? TokenHelper.GenerateSecureCode(32)
-            : request.ClientSecret;
+        var plaintextSecret = request.RequireClientSecret
+            ? (string.IsNullOrWhiteSpace(request.ClientSecret)
+                ? TokenHelper.GenerateSecureCode(32)
+                : request.ClientSecret)
+            : null;
 
         var client = new Client
         {
             ClientId = request.ClientId,
             Description = request.Description,
-            ClientSecret = _secretHasher.Hash(plaintextSecret),
+            ClientSecret = plaintextSecret == null ? null : _secretHasher.Hash(plaintextSecret),
             RedirectUri = request.RedirectUri,
             PostLogoutRedirectUri = request.PostLogoutRedirectUri,
-            RequirePkce = request.RequirePkce,
+            RequirePkce = request.RequireClientSecret ? request.RequirePkce : true,
+            RequireClientSecret = request.RequireClientSecret,
+            RequireConsent = request.RequireConsent,
             AllowRefreshToken = request.AllowRefreshToken,
             AllowedScopes = request.AllowedScopes
         };
@@ -75,6 +79,8 @@ public class ClientsController : ControllerBase
             RedirectUri = client.RedirectUri,
             PostLogoutRedirectUri = client.PostLogoutRedirectUri,
             RequirePkce = client.RequirePkce,
+            RequireClientSecret = client.RequireClientSecret,
+            RequireConsent = client.RequireConsent,
             AllowRefreshToken = client.AllowRefreshToken,
             AllowedScopes = client.AllowedScopes.ToList(),
             ClientSecret = plaintextSecret
@@ -115,6 +121,21 @@ public class ClientsController : ControllerBase
             client.RequirePkce = request.RequirePkce.Value;
         }
 
+        if (request.RequireClientSecret.HasValue)
+        {
+            client.RequireClientSecret = request.RequireClientSecret.Value;
+            if (!client.RequireClientSecret)
+            {
+                client.RequirePkce = true;
+                client.ClientSecret = null;
+            }
+        }
+
+        if (request.RequireConsent.HasValue)
+        {
+            client.RequireConsent = request.RequireConsent.Value;
+        }
+
         if (request.AllowRefreshToken.HasValue)
         {
             client.AllowRefreshToken = request.AllowRefreshToken.Value;
@@ -140,6 +161,11 @@ public class ClientsController : ControllerBase
             return NotFound();
         }
 
+        if (!client.RequireClientSecret)
+        {
+            return BadRequest(new { error = "public_client", error_description = "Public clients do not have a secret." });
+        }
+
         var plaintextSecret = TokenHelper.GenerateSecureCode(32);
         client.ClientSecret = _secretHasher.Hash(plaintextSecret);
         await _clients.UpdateAsync(client, cancellationToken);
@@ -152,6 +178,8 @@ public class ClientsController : ControllerBase
             RedirectUri = response.RedirectUri,
             PostLogoutRedirectUri = response.PostLogoutRedirectUri,
             RequirePkce = response.RequirePkce,
+            RequireClientSecret = response.RequireClientSecret,
+            RequireConsent = response.RequireConsent,
             AllowRefreshToken = response.AllowRefreshToken,
             AllowedScopes = response.AllowedScopes,
             ClientSecret = plaintextSecret

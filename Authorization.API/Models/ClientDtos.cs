@@ -17,6 +17,10 @@ public class ClientCreateRequest
 
     public bool RequirePkce { get; set; } = true;
 
+    public bool RequireClientSecret { get; set; } = true;
+
+    public bool RequireConsent { get; set; } = true;
+
     public bool AllowRefreshToken { get; set; } = true;
 
     public List<string> AllowedScopes { get; set; } = [];
@@ -32,6 +36,10 @@ public class ClientUpdateRequest
 
     public bool? RequirePkce { get; set; }
 
+    public bool? RequireClientSecret { get; set; }
+
+    public bool? RequireConsent { get; set; }
+
     public bool? AllowRefreshToken { get; set; }
 
     public List<string>? AllowedScopes { get; set; }
@@ -44,6 +52,8 @@ public class ClientResponse
     public string? RedirectUri { get; set; }
     public string? PostLogoutRedirectUri { get; set; }
     public bool RequirePkce { get; set; }
+    public bool RequireClientSecret { get; set; }
+    public bool RequireConsent { get; set; }
     public bool AllowRefreshToken { get; set; }
     public IReadOnlyList<string> AllowedScopes { get; set; } = [];
 
@@ -54,6 +64,8 @@ public class ClientResponse
         RedirectUri = client.RedirectUri,
         PostLogoutRedirectUri = client.PostLogoutRedirectUri,
         RequirePkce = client.RequirePkce,
+        RequireClientSecret = client.RequireClientSecret,
+        RequireConsent = client.RequireConsent,
         AllowRefreshToken = client.AllowRefreshToken,
         AllowedScopes = client.AllowedScopes.ToList()
     };
@@ -61,5 +73,6 @@ public class ClientResponse
 
 public class ClientCreatedResponse : ClientResponse
 {
-    public string ClientSecret { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ClientSecret { get; set; }
 }

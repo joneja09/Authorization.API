@@ -1,0 +1,83 @@
+@model Authorization.API.Models.ConsentViewModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Authorize application</title>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f4f6f8;
+            --card: #ffffff;
+            --text: #1f2933;
+            --muted: #52606d;
+            --accent: #2563eb;
+            --danger: #b91c1c;
+            --border: #d9e2ec;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: grid;
+            place-items: center;
+            padding: 1.5rem;
+        }
+        .card {
+            width: min(100%, 28rem);
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        }
+        h1 { margin: 0 0 0.35rem; font-size: 1.5rem; }
+        p { margin: 0 0 1rem; color: var(--muted); }
+        ul { margin: 0 0 1.5rem; padding-left: 1.2rem; }
+        .actions { display: flex; gap: 0.75rem; }
+        button {
+            flex: 1;
+            border: 0;
+            border-radius: 0.6rem;
+            padding: 0.85rem 1rem;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .allow { background: var(--accent); color: white; }
+        .deny { background: #e4e7eb; color: var(--text); }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Authorize @Model.ClientName</h1>
+        <p>This application is requesting access to:</p>
+        <ul>
+            @foreach (var scope in Model.Scopes)
+            {
+                <li>@scope</li>
+            }
+        </ul>
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="clientId" value="@Model.ClientId" />
+            <input type="hidden" name="redirectUri" value="@Model.RedirectUri" />
+            <input type="hidden" name="scope" value="@Model.Scope" />
+            <input type="hidden" name="state" value="@Model.State" />
+            <input type="hidden" name="codeChallenge" value="@Model.CodeChallenge" />
+            <input type="hidden" name="codeChallengeMethod" value="@Model.CodeChallengeMethod" />
+            <div class="actions">
+                <button class="allow" type="submit" name="decision" value="allow">Allow</button>
+                <button class="deny" type="submit" name="decision" value="deny">Deny</button>
+            </div>
+        </form>
+    </main>
+</body>
+</html>

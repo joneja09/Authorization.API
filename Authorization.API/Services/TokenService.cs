@@ -34,7 +34,9 @@ public interface ITokenService
 
     int GetAccessTokenExpirySeconds();
 
-    Task StoreRefreshToken(string refreshToken, string? userId = null, string? clientId = null);
+    Task StoreRefreshToken(string refreshToken, string? userId = null, string? clientId = null, string? familyId = null);
+
+    Task<RefreshTokenRotationResult> RotateRefreshToken(string refreshToken, string? userId = null, string? clientId = null);
 
     Task<bool> ValidateRefreshToken(string refreshToken, string? userId = null, string? clientId = null);
 
@@ -210,7 +212,7 @@ public class TokenService : ITokenService
         return TokenHelper.GenerateSecureCode(64);
     }
 
-    public async Task StoreRefreshToken(string refreshToken, string? userId = null, string? clientId = null)
+    public async Task StoreRefreshToken(string refreshToken, string? userId = null, string? clientId = null, string? familyId = null)
     {
         if (string.IsNullOrWhiteSpace(userId) && string.IsNullOrWhiteSpace(clientId))
         {
@@ -224,10 +226,76 @@ public class TokenService : ITokenService
             IsRevoked = false,
             Created = DateTime.UtcNow,
             UserId = userId,
-            ClientId = clientId
+            ClientId = clientId,
+            FamilyId = string.IsNullOrWhiteSpace(familyId) ? Guid.NewGuid().ToString("N") : familyId
         };
 
         await _dbContext.RefreshTokens.AddAsync(refreshTokenEntity);
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task<RefreshTokenRotationResult> RotateRefreshToken(string refreshToken, string? userId = null, string? clientId = null)
+    {
+        var hashed = TokenHelper.HashToken(refreshToken);
+        var query = _dbContext.RefreshTokens.Include(rt => rt.User).Where(rt => rt.Token == hashed);
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            query = query.Where(rt => rt.UserId == userId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(clientId))
+        {
+            query = query.Where(rt => rt.ClientId == clientId);
+        }
+
+        var stored = await query.FirstOrDefaultAsync();
+        if (stored == null)
+        {
+            return RefreshTokenRotationResult.Missing;
+        }
+
+        if (stored.IsRevoked)
+        {
+            await RevokeFamilyAsync(stored.FamilyId);
+            return RefreshTokenRotationResult.Reused;
+        }
+
+        if (stored.Expiry <= DateTime.UtcNow)
+        {
+            return RefreshTokenRotationResult.Missing;
+        }
+
+        stored.IsRevoked = true;
+        var next = GenerateRefreshToken();
+        await StoreRefreshToken(next, stored.UserId, stored.ClientId, stored.FamilyId);
+
+        return new RefreshTokenRotationResult
+        {
+            User = stored.User,
+            UserId = stored.UserId,
+            ClientId = stored.ClientId ?? clientId ?? string.Empty,
+            FamilyId = stored.FamilyId,
+            NewRefreshToken = next
+        };
+    }
+
+    private async Task RevokeFamilyAsync(string familyId)
+    {
+        if (string.IsNullOrEmpty(familyId))
+        {
+            return;
+        }
+
+        var family = await _dbContext.RefreshTokens
+            .Where(rt => rt.FamilyId == familyId && !rt.IsRevoked)
+            .ToListAsync();
+
+        foreach (var token in family)
+        {
+            token.IsRevoked = true;
+        }
+
         await _dbContext.SaveChangesAsync();
     }
 
