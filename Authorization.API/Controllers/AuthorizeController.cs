@@ -95,10 +95,9 @@ public class AuthorizeController : Controller
             return Unauthorized("User is not authenticated.");
         }
 
-        var requestedScopes = ConsentService.Split(scope);
-        if (requestedScopes.Count == 0)
+        if (!ConsentService.TryResolveScopes(client, scope, out var requestedScopes))
         {
-            requestedScopes = client.AllowedScopes.ToList();
+            return RedirectWithError(redirect_uri, "invalid_scope", "One or more requested scopes are not allowed.", state);
         }
 
         if (client.RequireConsent

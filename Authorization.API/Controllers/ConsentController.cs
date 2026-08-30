@@ -46,17 +46,21 @@ public class ConsentController : Controller
             return BadRequest("Invalid client.");
         }
 
-        var scopes = ConsentService.Split(scope);
-        if (scopes.Count == 0)
+        if (!ConsentService.IsRegisteredRedirect(client, redirect_uri))
         {
-            scopes = client.AllowedScopes.ToList();
+            return BadRequest("Invalid redirect URI.");
+        }
+
+        if (!ConsentService.TryResolveScopes(client, scope, out var scopes))
+        {
+            return BadRequest("Invalid scope.");
         }
 
         return View(new ConsentViewModel
         {
             ClientId = client.ClientId,
             ClientName = client.Description ?? client.ClientId,
-            RedirectUri = redirect_uri,
+            RedirectUri = client.RedirectUri!,
             Scope = string.Join(' ', scopes),
             State = state,
             CodeChallenge = code_challenge,
@@ -89,23 +93,35 @@ public class ConsentController : Controller
             return Unauthorized();
         }
 
+        var client = await _clients.GetClientById(clientId);
+        if (client == null || !ConsentService.IsRegisteredRedirect(client, redirectUri))
+        {
+            return BadRequest("Invalid client or redirect URI.");
+        }
+
+        var safeRedirect = client.RedirectUri!;
+
         if (string.Equals(decision, "deny", StringComparison.OrdinalIgnoreCase))
         {
-            return Redirect(QueryHelpers.AddQueryString(redirectUri, new Dictionary<string, string?>
+            return Redirect(QueryHelpers.AddQueryString(safeRedirect, new Dictionary<string, string?>
             {
                 ["error"] = "access_denied",
                 ["state"] = state
             }));
         }
 
-        var scopes = ConsentService.Split(scope);
+        if (!ConsentService.TryResolveScopes(client, scope, out var scopes))
+        {
+            return BadRequest("Invalid scope.");
+        }
+
         await _consents.GrantAsync(user.Id, clientId, scopes);
 
         return Redirect(QueryHelpers.AddQueryString("/authorize", new Dictionary<string, string?>
         {
             ["response_type"] = "code",
             ["client_id"] = clientId,
-            ["redirect_uri"] = redirectUri,
+            ["redirect_uri"] = safeRedirect,
             ["scope"] = scope,
             ["state"] = state,
             ["code_challenge"] = codeChallenge,

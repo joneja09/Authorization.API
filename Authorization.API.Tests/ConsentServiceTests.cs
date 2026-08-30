@@ -23,4 +23,26 @@ public class ConsentServiceTests
         Assert.True(await consents.HasConsentAsync("u1", "spa", ["openid"]));
         Assert.False(await consents.HasConsentAsync("u1", "spa", ["openid", "api"]));
     }
+
+    [Fact]
+    public void TryResolveScopes_RejectsUnknownScopes()
+    {
+        var client = new Client { AllowedScopes = ["openid", "api"] };
+
+        Assert.True(ConsentService.TryResolveScopes(client, "openid", out var allowed));
+        Assert.Equal(["openid"], allowed);
+        Assert.False(ConsentService.TryResolveScopes(client, "openid admin", out _));
+        Assert.True(ConsentService.TryResolveScopes(client, null, out var defaults));
+        Assert.Equal(["openid", "api"], defaults);
+    }
+
+    [Fact]
+    public void IsRegisteredRedirect_RequiresExactMatch()
+    {
+        var client = new Client { RedirectUri = "http://localhost:3000/callback" };
+
+        Assert.True(ConsentService.IsRegisteredRedirect(client, "http://localhost:3000/callback"));
+        Assert.False(ConsentService.IsRegisteredRedirect(client, "https://evil.example/callback"));
+        Assert.False(ConsentService.IsRegisteredRedirect(client, "/relative"));
+    }
 }

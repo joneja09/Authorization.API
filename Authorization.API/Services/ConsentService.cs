@@ -76,4 +76,30 @@ public class ConsentService : IConsentService
 
         return [.. scope.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
     }
+
+    public static bool IsRegisteredRedirect(Client client, string? redirectUri)
+    {
+        return !string.IsNullOrWhiteSpace(redirectUri)
+            && Uri.TryCreate(redirectUri, UriKind.Absolute, out _)
+            && string.Equals(client.RedirectUri, redirectUri, StringComparison.Ordinal);
+    }
+
+    public static bool TryResolveScopes(Client client, string? requested, out List<string> scopes)
+    {
+        var parsed = Split(requested);
+        if (parsed.Count == 0)
+        {
+            scopes = client.AllowedScopes.ToList();
+            return true;
+        }
+
+        if (parsed.Any(scope => !client.AllowedScopes.Contains(scope)))
+        {
+            scopes = [];
+            return false;
+        }
+
+        scopes = parsed;
+        return true;
+    }
 }
