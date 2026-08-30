@@ -18,6 +18,8 @@ public class RefreshToken
 
     public bool IsRevoked { get; set; }
 
+    public string FamilyId { get; set; } = Guid.NewGuid().ToString("N");
+
     public DateTime Created { get; set; } = DateTime.UtcNow;
 
     public ApplicationUser? User { get; set; }

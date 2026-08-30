@@ -13,15 +13,18 @@ public class AuthorizeController : Controller
 {
     private readonly IClientService _clientService;
     private readonly ITokenService _tokenService;
+    private readonly IConsentService _consentService;
     private readonly UserManager<ApplicationUser> _userManager;
 
     public AuthorizeController(
         IClientService clientService,
         ITokenService tokenService,
+        IConsentService consentService,
         UserManager<ApplicationUser> userManager)
     {
         _clientService = clientService;
         _tokenService = tokenService;
+        _consentService = consentService;
         _userManager = userManager;
     }
 
@@ -54,7 +57,8 @@ public class AuthorizeController : Controller
             return BadRequest("Invalid redirect URI.");
         }
 
-        if (client.RequirePkce && string.IsNullOrWhiteSpace(code_challenge))
+        var pkceRequired = client.RequirePkce || !client.RequireClientSecret;
+        if (pkceRequired && string.IsNullOrWhiteSpace(code_challenge))
         {
             return RedirectWithError(redirect_uri, "invalid_request", "PKCE is required.", state);
         }
@@ -65,24 +69,24 @@ public class AuthorizeController : Controller
             return RedirectWithError(redirect_uri, "invalid_request", "Only S256 PKCE is supported.", state);
         }
 
+        var authorizeQuery = new Dictionary<string, string?>
+        {
+            ["response_type"] = response_type,
+            ["client_id"] = client_id,
+            ["redirect_uri"] = redirect_uri,
+            ["scope"] = scope,
+            ["state"] = state,
+            ["code_challenge"] = code_challenge,
+            ["code_challenge_method"] = code_challenge_method
+        };
+
         var cookieAuth = await HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         if (!cookieAuth.Succeeded)
         {
-            var challengeProperties = new AuthenticationProperties
+            return Challenge(new AuthenticationProperties
             {
-                RedirectUri = QueryHelpers.AddQueryString("/authorize", new Dictionary<string, string?>
-                {
-                    ["response_type"] = response_type,
-                    ["client_id"] = client_id,
-                    ["redirect_uri"] = redirect_uri,
-                    ["scope"] = scope,
-                    ["state"] = state,
-                    ["code_challenge"] = code_challenge,
-                    ["code_challenge_method"] = code_challenge_method
-                })
-            };
-
-            return Challenge(challengeProperties, IdentityConstants.ApplicationScheme);
+                RedirectUri = QueryHelpers.AddQueryString("/authorize", authorizeQuery)
+            }, IdentityConstants.ApplicationScheme);
         }
 
         var user = await _userManager.GetUserAsync(cookieAuth.Principal);
@@ -91,12 +95,23 @@ public class AuthorizeController : Controller
             return Unauthorized("User is not authenticated.");
         }
 
+        if (!ConsentService.TryResolveScopes(client, scope, out var requestedScopes))
+        {
+            return RedirectWithError(redirect_uri, "invalid_scope", "One or more requested scopes are not allowed.", state);
+        }
+
+        if (client.RequireConsent
+            && !await _consentService.HasConsentAsync(user.Id, client.ClientId, requestedScopes))
+        {
+            return Redirect(QueryHelpers.AddQueryString("/consent", authorizeQuery));
+        }
+
         var authorizationCode = await _tokenService.GenerateAuthorizationCode(
             client_id,
             user.Id,
             user.Id,
             redirect_uri,
-            scope,
+            string.Join(' ', requestedScopes),
             code_challenge,
             code_challenge_method);
 

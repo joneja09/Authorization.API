@@ -1,0 +1,42 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: authorization-sql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-LocalDev_Sql#2026}"
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - authorization-sql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/1433'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 25s
+
+  api:
+    build:
+      context: .
+      dockerfile: Authorization.API/Dockerfile
+    container_name: authorization-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=AuthorizationApi;User Id=sa;Password=${MSSQL_SA_PASSWORD:-LocalDev_Sql#2026};TrustServerCertificate=True;MultipleActiveResultSets=True"
+      Jwt__SecretKey: DEV_ONLY_JWT_SIGNING_KEY_MUST_BE_LONG_ENOUGH_32
+      Jwt__Issuer: http://localhost:8080
+      Jwt__Audience: http://localhost:8080
+      EncryptionKey: TG9jYWxEZXYtQUVTMjU2LUVuY3J5cHRpb24tS2V5cyE=
+      Database__MigrateOnStartup: "true"
+      Seed__Enabled: "true"
+    ports:
+      - "8080:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+volumes:
+  authorization-sql-data:
