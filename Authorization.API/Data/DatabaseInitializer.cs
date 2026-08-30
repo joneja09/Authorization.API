@@ -1,5 +1,7 @@
 using Authorization.API.Context;
+using Authorization.API.Data;
 using Authorization.API.Models;
+using Authorization.API.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -85,6 +87,7 @@ public static class DatabaseInitializer
         var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var db = services.GetRequiredService<ApplicationDbContext>();
+        var secretHasher = services.GetRequiredService<IClientSecretHasher>();
 
         foreach (var roleName in new[] { "Administrator", "User" })
         {
@@ -117,12 +120,38 @@ public static class DatabaseInitializer
             {
                 ClientId = options.DemoClientId,
                 Description = "Local demo confidential client",
-                ClientSecret = options.DemoClientSecret,
+                ClientSecret = secretHasher.Hash(options.DemoClientSecret),
                 RedirectUri = options.DemoRedirectUri,
                 RequirePkce = true,
+                RequireClientSecret = true,
+                RequireConsent = true,
                 AllowRefreshToken = true,
                 AllowedScopes = ["openid", "profile", "email", "api"]
             });
+        }
+
+        if (!await db.Clients.AnyAsync(c => c.ClientId == "demo-spa", cancellationToken))
+        {
+            db.Clients.Add(new Client
+            {
+                ClientId = "demo-spa",
+                Description = "Local demo public SPA client",
+                ClientSecret = null,
+                RedirectUri = options.DemoRedirectUri,
+                RequirePkce = true,
+                RequireClientSecret = false,
+                RequireConsent = true,
+                AllowRefreshToken = true,
+                AllowedScopes = ["openid", "profile", "email", "api"]
+            });
+        }
+
+        foreach (var client in await db.Clients.ToListAsync(cancellationToken))
+        {
+            if (!string.IsNullOrEmpty(client.ClientSecret) && !secretHasher.IsHashed(client.ClientSecret))
+            {
+                client.ClientSecret = secretHasher.Hash(client.ClientSecret);
+            }
         }
 
         await db.SaveChangesAsync(cancellationToken);

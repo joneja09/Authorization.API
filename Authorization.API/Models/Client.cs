@@ -12,14 +12,17 @@ public class Client
 
     public string? Description { get; set; }
 
-    [Required]
-    public string ClientSecret { get; set; } = string.Empty;
+    public string? ClientSecret { get; set; }
 
     public string? RedirectUri { get; set; }
 
     public string? PostLogoutRedirectUri { get; set; }
 
     public bool RequirePkce { get; set; } = true;
+
+    public bool RequireClientSecret { get; set; } = true;
+
+    public bool RequireConsent { get; set; } = true;
 
     public bool AllowRefreshToken { get; set; } = true;
 

@@ -1,6 +1,7 @@
 using Authorization.API.Context;
 using Authorization.API.Data;
 using Authorization.API.Models;
+using Authorization.API.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,7 @@ public class DatabaseInitializerTests
         services.AddIdentity<ApplicationUser, ApplicationRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
+        services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
 
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
@@ -40,8 +42,11 @@ public class DatabaseInitializerTests
         Assert.NotNull(admin);
         Assert.NotNull(demo);
         Assert.True(await userManager.IsInRoleAsync(admin!, "Administrator"));
-        Assert.Equal(options.DemoClientSecret, client.ClientSecret);
+        var hasher = scope.ServiceProvider.GetRequiredService<IClientSecretHasher>();
+        Assert.True(hasher.Verify(client.ClientSecret!, options.DemoClientSecret));
+        Assert.NotEqual(options.DemoClientSecret, client.ClientSecret);
         Assert.Contains("api", client.AllowedScopes);
         Assert.True(await db.ApiScopes.AnyAsync(s => s.Name == "openid"));
+        Assert.True(await db.Clients.AnyAsync(c => c.ClientId == "demo-spa" && !c.RequireClientSecret));
     }
 }

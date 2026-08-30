@@ -37,6 +37,7 @@ The API applies EF Core migrations and seeds demo data on startup.
 | Admin user | `admin@localhost` / `Admin123!` |
 | Demo user | `demo@example.com` / `Password1!` |
 | Confidential client | `demo-client` / `demo-secret` |
+| Public SPA client | `demo-spa` (no secret; PKCE required) |
 | Redirect URI | `http://localhost:3000/callback` |
 
 Change these before any shared or production use.
@@ -74,6 +75,38 @@ Set secrets with environment variables or user secrets, not production config fi
 | `Seed__Enabled` | Create demo users/clients (on in Development) |
 
 Production should set `Database__MigrateOnStartup` and `Seed__Enabled` to `false` unless you intentionally want boot-time migration.
+
+## Admin client APIs
+
+Register and rotate OAuth clients without writing SQL. These endpoints require a JWT for a user in the `Administrator` role (the seeded `admin@localhost` user).
+
+```bash
+# 1. Sign in as admin
+curl -s -X POST http://localhost:8080/account/login/token \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@localhost","password":"Admin123!"}'
+
+# 2. Create a client (the plaintext secret is returned once)
+curl -X POST http://localhost:8080/admin/clients \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"spa","redirectUri":"http://localhost:3000/callback","allowedScopes":["openid","api"]}'
+```
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/admin/clients` | List clients (secrets never returned) |
+| GET | `/admin/clients/{id}` | Get one client |
+| POST | `/admin/clients` | Create client; secret is hashed at rest |
+| PUT | `/admin/clients/{id}` | Update metadata and scopes |
+| POST | `/admin/clients/{id}/secret` | Rotate secret |
+| DELETE | `/admin/clients/{id}` | Delete client |
+
+Client secrets are stored with ASP.NET Identity's password hasher. Existing plaintext secrets are hashed automatically on the next startup seed.
+
+Public clients (`requireClientSecret: false`) skip the secret, require PKCE, and cannot use the client credentials grant. After login, users see a consent screen the first time a client requests scopes.
+
+Refresh tokens rotate on every use. Presenting a previously rotated token revokes the entire token family.
 
 ## Example: authorization code + PKCE
 

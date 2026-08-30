@@ -51,7 +51,7 @@ public class AccountApiController : ControllerBase
             return Unauthorized("Invalid email or password.");
         }
 
-        var accessToken = _tokenService.GenerateJwtToken(user);
+        var accessToken = _tokenService.GenerateJwtToken(user, await _userManager.GetRolesAsync(user));
         var refreshToken = _tokenService.GenerateRefreshToken();
         await _tokenService.StoreRefreshToken(refreshToken, user.Id);
 
@@ -128,25 +128,26 @@ public class AccountApiController : ControllerBase
             }
         }
 
-        var tokenIsValid = await _tokenService.ValidateRefreshToken(model.RefreshToken, model.UserId, model.ClientId);
-        if (!tokenIsValid)
+        var rotation = await _tokenService.RotateRefreshToken(model.RefreshToken, model.UserId, model.ClientId);
+        if (rotation.IsInvalid)
         {
-            return Unauthorized("Invalid refresh token.");
+            return Unauthorized(rotation.ReuseDetected
+                ? "Refresh token reuse detected."
+                : "Invalid refresh token.");
         }
 
-        await _tokenService.RevokeRefreshToken(model.RefreshToken, model.UserId, model.ClientId);
-
-        var newAccessToken = user == null
-            ? _tokenService.GenerateJwtToken(client!)
-            : _tokenService.GenerateJwtToken(user);
-        var newRefreshToken = _tokenService.GenerateRefreshToken();
-
-        await _tokenService.StoreRefreshToken(newRefreshToken, user?.Id, client?.ClientId);
+        var newAccessToken = rotation.User == null && client != null
+            ? _tokenService.GenerateJwtToken(client)
+            : rotation.User != null
+                ? _tokenService.GenerateJwtToken(rotation.User, await _userManager.GetRolesAsync(rotation.User))
+                : user != null
+                    ? _tokenService.GenerateJwtToken(user, await _userManager.GetRolesAsync(user))
+                    : _tokenService.GenerateJwtToken(client!);
 
         return Ok(new TokenResponse
         {
             AccessToken = newAccessToken,
-            RefreshToken = newRefreshToken,
+            RefreshToken = rotation.NewRefreshToken,
             TokenType = "Bearer",
             ExpiresIn = _tokenService.GetAccessTokenExpirySeconds()
         });
